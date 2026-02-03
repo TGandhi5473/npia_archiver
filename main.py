@@ -1,3 +1,9 @@
+import sys
+import asyncio
+
+# This must happen BEFORE any other imports to fix the Windows subprocess issue
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 import streamlit as st
 import pandas as pd
 from core.scraper import NovelArchiver
