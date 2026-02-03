@@ -66,7 +66,7 @@ with tab_scrape:
             
             for idx, nid in enumerate(ids_to_process):
                 status_area.markdown(f"**Current Task:** Scoping ID `{nid}`...")
-                res = st.session_state.archiver.scrape_novel(nid)
+                res = st.session_state.archiver.scrape_novel(int(nid))
                 
                 with log_area:
                     if res == "Saved": st.success(f"ID {nid}: Successfully Archived")
