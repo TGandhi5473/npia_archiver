@@ -12,7 +12,8 @@ data/metadata.json
 *.db
 *.sqlite
 *.sqlite3
-
+# Exclude the actual database file from GitHub
+data/archiver.db
 # Log files
 *.log
 # Environments
