@@ -1,4 +1,5 @@
 🚀 NPIA Archiver: The Local Novelpia Encyclopedia
+
 The Problem: Manually looping through Novelpia to find high-quality work is a slow, inefficient "gacha" game.
 
 The Solution: A high-performance scraping and storage engine that builds a local, searchable database of novels, filtering out the noise and translating tags for a better discovery experience.
