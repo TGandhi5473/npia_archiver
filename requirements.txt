@@ -1,6 +1,6 @@
 # Web App & UI
-streamlit>=1.53.1
-pandas>=3.0.0
+streamlit==1.53.1
+pandas>=2.2.3,<3.0.0
 
 # Browser Automation & Anti-Bot
 playwright>=1.57.0
