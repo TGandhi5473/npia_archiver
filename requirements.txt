@@ -1,21 +1,14 @@
-# Web Framework & UI
-streamlit==1.31.0
+# Web Scraping & Bypassing Cloudflare
+cloudscraper>=1.2.71
+beautifulsoup4>=4.12.0
 
-# Scraping & Networking
-requests==2.31.0
-beautifulsoup4==4.12.3
+# Translation Engine
+deep-translator>=1.11.0
 
-# Data Processing
-pandas==2.2.0
+# UI & Data Handling
+streamlit>=1.42.0
+pandas>=2.2.0
+numpy>=1.26.0
 
-# HTML Parsing Performance (Recommended)
-# lxml is faster than the default 'html.parser' and handles messy HTML better
-lxml==5.1.0
-
-# Encoding Support
-# Helps with Korean characters (UTF-8) and potential encoding issues
-charset-normalizer==3.3.2
-
-# Data Serialization
-# While 'json' is built-in, 'pydantic' is great for validating the "junk" filter
-pydantic==2.6.1
+# Utilities
+requests>=2.31.0
