@@ -1,10 +1,10 @@
-# ==========================================
-# FILE: core/scraper.py
-# ==========================================
 import cloudscraper
-from bs4 import BeautifulSoup
-import re
+import json
+import os
 import time
+import re
+from bs4 import BeautifulSoup
+from deep_translator import GoogleTranslator
 from .database import NovelDB
 from .filters import is_high_quality
 
@@ -15,6 +15,32 @@ class NovelArchiver:
             browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
         )
         self.base_url = "https://novelpia.com/novel/"
+        self.translator = GoogleTranslator(source='ko', target='en')
+        self.tag_map_path = "tag_map.json"
+        self.tag_map = self.load_tag_map()
+
+    def load_tag_map(self):
+        if os.path.exists(self.tag_map_path):
+            with open(self.tag_map_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+
+    def save_tag_map(self):
+        with open(self.tag_map_path, 'w', encoding='utf-8') as f:
+            json.dump(self.tag_map, f, ensure_ascii=False, indent=4)
+
+    def translate_tag(self, ko_tag):
+        if ko_tag in self.tag_map:
+            return self.tag_map[ko_tag]
+        
+        # New tag logic
+        try:
+            en_tag = self.translator.translate(ko_tag)
+            self.tag_map[ko_tag] = en_tag
+            self.save_tag_map() # Persist to file immediately
+            return en_tag
+        except:
+            return ko_tag
 
     def clean_numeric(self, value):
         if not value: return 0
@@ -29,43 +55,37 @@ class NovelArchiver:
         if self.db.is_cached(novel_id):
             return "Cached"
 
-        url = f"{self.base_url}{novel_id}"
         try:
-            response = self.scraper.get(url, timeout=10)
-            
-            # 1. Handle HTTP errors (Removed/Private)
-            if response.status_code == 404:
-                return "Parse Error: Novel Removed"
-            if response.status_code == 403:
-                return "Parse Error: Private/Restricted"
+            response = self.scraper.get(f"{self.base_url}{novel_id}", timeout=10)
+            if response.status_code == 404: return "Parse Error: Removed"
+            if response.status_code == 403: return "Parse Error: Private"
 
             soup = BeautifulSoup(response.text, 'html.parser')
-
-            # 2. Handle Logic Errors (Missing Elements)
             title_tag = soup.select_one(".title")
-            if not title_tag or "존재하지 않는" in response.text:
-                return "Parse Error: Novel Removed"
+            if not title_tag: return "Parse Error: Removed"
 
-            # 3. Extract Metadata
+            # Tag Processing
+            ko_tags = [t.get_text(strip=True).replace("#", "") for t in soup.select(".tag_item")]
+            en_tags = [self.translate_tag(tag) for tag in ko_tags]
+
             metadata = {
                 "title": title_tag.get_text(strip=True),
                 "writer": soup.select_one(".writer").get_text(strip=True) if soup.select_one(".writer") else "Unknown",
                 "views": self.clean_numeric(soup.select_one(".view_count").text if soup.select_one(".view_count") else "0"),
                 "chapters": self.clean_numeric(soup.select_one(".ep_count").text if soup.select_one(".ep_count") else "0"),
-                "is_19": 1 if soup.select_one(".badge-19, .icon-19") else 0,
-                "is_plus": 1 if soup.select_one(".badge-plus, .plus_icon") else 0,
-                "is_completed": 1 if "완결" in soup.get_text() else 0,
-                "tags_en": [t.get_text(strip=True) for t in soup.select(".tag_item")],
-                "url": url
+                "is_19": 1 if soup.select_one(".badge-19") else 0,
+                "is_plus": 1 if soup.select_one(".badge-plus") else 0,
+                "tags_ko": ko_tags,
+                "tags_en": en_tags,
+                "url": f"{self.base_url}{novel_id}"
             }
 
-            # 4. Quality Gate
             if not is_high_quality(metadata, int(novel_id)):
                 return "Filtered"
 
             self.db.save_novel(novel_id, metadata)
-            time.sleep(1.2)
+            time.sleep(1.5) # Sleep longer to respect translation API
             return "Saved"
 
         except Exception as e:
-            return f"System Error: {str(e)}"
+            return f"Error: {str(e)}"
