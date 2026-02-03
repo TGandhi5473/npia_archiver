@@ -1,0 +1,14 @@
+# Python junk
+__pycache__/
+*.pyc
+
+# Streamlit local settings
+.streamlit/
+
+# Data and Cache
+data/metadata.json
+*.log
+
+# Environments
+venv/
+.env
