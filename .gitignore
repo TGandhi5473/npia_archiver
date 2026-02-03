@@ -8,7 +8,13 @@ __pycache__/
 # Data and Cache
 data/metadata.json
 *.log
+# SQLite Databases
+*.db
+*.sqlite
+*.sqlite3
 
+# Log files
+*.log
 # Environments
 venv/
 .env
