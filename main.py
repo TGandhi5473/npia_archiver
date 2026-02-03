@@ -1,59 +1,56 @@
 import streamlit as st
-import pandas as pd
+import os
 from core.scraper import NovelArchiver
-from core.translator import identify_missing_tags, TAG_MAP
 
-# Initialize the backend logic
-archiver = NovelArchiver()
+# 1. Initialize the Archiver once and keep it in memory
+if 'archiver' not in st.session_state:
+    st.session_state.archiver = NovelArchiver()
 
-st.set_page_config(page_title="Novelpia Archiver", layout="wide")
+st.title("📖 Novelpia Archiver v2.0")
 
-st.title("📚 Novelpia Metadata Archiver")
+# Sidebar Metrics
+total_archived = len(st.session_state.archiver.data)
+st.sidebar.metric("Saved in JSON", total_archived)
 
-# --- SIDEBAR CONTROLS ---
-st.sidebar.header("Scraper Settings")
-start_id = st.sidebar.number_input("Start ID", value=402000)
-end_id = st.sidebar.number_input("End ID", value=403000)
+# UI Controls
+col1, col2 = st.columns(2)
+with col1:
+    start_id = st.number_input("Start ID", value=402000)
+with col2:
+    end_id = st.number_input("End ID", value=402010)
 
-if st.sidebar.button("🚀 Start Scraping"):
+if st.button("🚀 Start Archiving"):
     progress_bar = st.progress(0)
     status_text = st.empty()
+    log_area = st.container()
     
-    consecutive_404s = 0
-    total_to_check = end_id - start_id + 1
+    total_range = end_id - start_id + 1
     
-    for i, nid in enumerate(range(start_id, end_id + 1)):
-        result = archiver.scrape_novel(nid)
+    for i, novel_id in enumerate(range(start_id, end_id + 1)):
+        # Calculate progress
+        pct = (i + 1) / total_range
+        progress_bar.progress(pct)
+        status_text.text(f"Processing ID: {novel_id}...")
+
+        # CALL THE SCRAPER
+        # This updates self.data and calls _save() automatically
+        result = st.session_state.archiver.scrape_novel(novel_id)
         
-        # Auto-stop logic
-        if result == "404":
-            consecutive_404s += 1
-        else:
-            consecutive_404s = 0
-            
-        if consecutive_404s >= 10:
-            st.warning("Stopped: Hit 10 consecutive 404s.")
-            break
-            
-        # Update UI
-        progress = (i + 1) / total_to_check
-        progress_bar.progress(progress)
-        status_text.text(f"Processing ID {nid}: {result}")
+        # Display live feedback in UI
+        with log_area:
+            if result == "Saved":
+                st.success(f"✅ {novel_id}: Saved to JSON")
+            elif result == "Filtered":
+                st.warning(f"⏳ {novel_id}: Filtered (Low Quality)")
+            elif result == "Cached":
+                st.info(f"📦 {novel_id}: Already in Archive")
+            else:
+                st.error(f"❌ {novel_id}: {result}")
 
-# --- MAIN DASHBOARD ---
-tab1, tab2 = st.tabs(["📊 Archived Data", "🏷️ Tag Manager"])
+    st.balloons()
+    st.success(f"Finished! Total archived is now: {len(st.session_state.archiver.data)}")
 
-with tab1:
-    if archiver.data:
-        df = pd.DataFrame.from_dict(archiver.data, orient='index')
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("No data archived yet. Use the sidebar to start.")
-
-with tab2:
-    missing = identify_missing_tags(archiver.data)
-    if missing:
-        st.write("### New Tags Found (Needs Translation):")
-        st.code(", ".join(missing))
-    else:
-        st.success("All tags are currently mapped to English!")
+# Debug: Show the actual file path where it's saving
+st.divider()
+abs_path = os.path.abspath(st.session_state.archiver.storage_path)
+st.caption(f"Saving to: `{abs_path}`")
