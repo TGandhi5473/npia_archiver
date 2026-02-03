@@ -11,20 +11,13 @@ from .database import NovelDB
 class NovelArchiver:
     def __init__(self):
         self.db = NovelDB()
-        # Initialize with specific browser fingerprint
         self.scraper = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'desktop': True
-            }
+            browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
         )
-        # Force Korean headers to look like a local user
+        # Mimic a high-authority browser session
         self.scraper.headers.update({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
             "Referer": "https://novelpia.com/",
-            "Cache-Control": "max-age=0"
+            "Accept-Language": "ko-KR,ko;q=0.9",
         })
         self.base_url = "https://novelpia.com/novel/"
         self.translator = GoogleTranslator(source='ko', target='en')
@@ -41,26 +34,7 @@ class NovelArchiver:
         with open(self.tag_map_path, 'w', encoding='utf-8') as f:
             json.dump(self.tag_map, f, ensure_ascii=False, indent=4)
 
-    def translate_tag(self, ko_tag):
-        if ko_tag in self.tag_map: return self.tag_map[ko_tag]
-        try:
-            en_tag = self.translator.translate(ko_tag)
-            self.tag_map[ko_tag] = en_tag
-            self.save_tag_map()
-            return en_tag
-        except: return ko_tag
-
-    def clean_numeric(self, value):
-        if not value: return 0
-        text = str(value).replace(',', '').strip()
-        if '만' in text:
-            try: return int(float(text.replace('만', '')) * 10000)
-            except: return 0
-        digits = re.sub(r'[^0-9]', '', text)
-        return int(digits) if digits else 0
-
     def scrape_novel(self, novel_id):
-        # 1. Simple Cache Check
         if self.db.is_cached(novel_id):
             return "Cached"
 
@@ -68,23 +42,34 @@ class NovelArchiver:
             url = f"{self.base_url}{novel_id}"
             response = self.scraper.get(url, timeout=15)
             
-            # Explicit 403 / Cloudflare Detection
-            if response.status_code == 403 or "cf-browser-verification" in response.text:
-                return "403: Forbidden/Bot Detection"
+            # --- THE 403 DIAGNOSTIC CHECK ---
+            html_content = response.text.lower()
             
-            if response.status_code == 404: 
-                return "Parse Error: Removed"
+            if response.status_code == 403:
+                return "🚨 403: Hard Block"
+            
+            if "checking your browser" in html_content or "cloudflare" in html_content:
+                return "🛡️ 403: Cloudflare Challenge (Silent)"
+            
+            if "login" in response.url or "member/login" in html_content:
+                return "🔑 403: Login Required"
 
             soup = BeautifulSoup(response.text, 'html.parser')
             title_tag = soup.select_one(".title")
             
-            # Direct Title Check (No quality filters)
+            # If we get here but have no title, the site structure likely changed
             if not title_tag:
-                return "Parse Error: Novel Removed"
+                return "❓ Error: Elements Not Found (Structure Change?)"
 
-            # 2. Extract Metadata
+            # Extraction
             ko_tags = [t.get_text(strip=True).replace("#", "") for t in soup.select(".tag_item")]
-            en_tags = [self.translate_tag(tag) for tag in ko_tags]
+            en_tags = [self.tag_map.get(t) or self.translator.translate(t) for t in ko_tags]
+            
+            # Update map for new tags
+            for ko, en in zip(ko_tags, en_tags):
+                if ko not in self.tag_map:
+                    self.tag_map[ko] = en
+            self.save_tag_map()
 
             metadata = {
                 "title": title_tag.get_text(strip=True),
@@ -99,12 +84,14 @@ class NovelArchiver:
                 "url": url
             }
 
-            # 3. Direct Save
             self.db.save_novel(novel_id, metadata)
-            
-            # 4. Human-like Jitter Delay
-            time.sleep(random.uniform(2.0, 5.0))
+            time.sleep(random.uniform(2, 4))
             return "Saved"
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            return f"❌ System Error: {str(e)}"
+
+    def clean_numeric(self, value):
+        text = re.sub(r'[^0-9.]', '', str(value).replace(',', ''))
+        if '만' in str(value): return int(float(text) * 10000)
+        return int(float(text)) if text else 0
