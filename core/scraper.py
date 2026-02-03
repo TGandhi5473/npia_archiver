@@ -6,7 +6,6 @@ import re
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 from .database import NovelDB
-from .filters import is_high_quality
 
 class NovelArchiver:
     def __init__(self):
@@ -32,12 +31,10 @@ class NovelArchiver:
     def translate_tag(self, ko_tag):
         if ko_tag in self.tag_map:
             return self.tag_map[ko_tag]
-        
-        # New tag logic
         try:
             en_tag = self.translator.translate(ko_tag)
             self.tag_map[ko_tag] = en_tag
-            self.save_tag_map() # Persist to file immediately
+            self.save_tag_map()
             return en_tag
         except:
             return ko_tag
@@ -52,19 +49,24 @@ class NovelArchiver:
         return int(digits) if digits else 0
 
     def scrape_novel(self, novel_id):
+        # 1. DIRECT CACHE CHECK (No complex logic)
         if self.db.is_cached(novel_id):
             return "Cached"
 
         try:
-            response = self.scraper.get(f"{self.base_url}{novel_id}", timeout=10)
+            url = f"{self.base_url}{novel_id}"
+            response = self.scraper.get(url, timeout=10)
+            
             if response.status_code == 404: return "Parse Error: Removed"
             if response.status_code == 403: return "Parse Error: Private"
 
             soup = BeautifulSoup(response.text, 'html.parser')
             title_tag = soup.select_one(".title")
+            
+            # If we can't find a title, it's a bad ID
             if not title_tag: return "Parse Error: Removed"
 
-            # Tag Processing
+            # 2. EXTRACTION
             ko_tags = [t.get_text(strip=True).replace("#", "") for t in soup.select(".tag_item")]
             en_tags = [self.translate_tag(tag) for tag in ko_tags]
 
@@ -73,18 +75,18 @@ class NovelArchiver:
                 "writer": soup.select_one(".writer").get_text(strip=True) if soup.select_one(".writer") else "Unknown",
                 "views": self.clean_numeric(soup.select_one(".view_count").text if soup.select_one(".view_count") else "0"),
                 "chapters": self.clean_numeric(soup.select_one(".ep_count").text if soup.select_one(".ep_count") else "0"),
-                "is_19": 1 if soup.select_one(".badge-19") else 0,
-                "is_plus": 1 if soup.select_one(".badge-plus") else 0,
+                "is_19": 1 if soup.select_one(".badge-19, .icon-19") else 0,
+                "is_plus": 1 if soup.select_one(".badge-plus, .plus_icon") else 0,
+                "is_completed": 1 if "완결" in response.text else 0,
                 "tags_ko": ko_tags,
                 "tags_en": en_tags,
-                "url": f"{self.base_url}{novel_id}"
+                "url": url
             }
 
-            if not is_high_quality(metadata, int(novel_id)):
-                return "Filtered"
-
+            # 3. DIRECT SAVE (Removed the 'is_high_quality' filter that was skipping novels)
             self.db.save_novel(novel_id, metadata)
-            time.sleep(1.5) # Sleep longer to respect translation API
+            
+            time.sleep(1.0) # Ethical delay
             return "Saved"
 
         except Exception as e:
