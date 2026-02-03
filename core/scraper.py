@@ -64,4 +64,47 @@ class NovelArchiver:
                     content = page.content().lower()
                     if "just a moment" in content or "cloudflare" in content or response.status == 403:
                         browser.close()
-                        return "🛑 403: Cloudflare Blocked
+                        return "🛑 403: Cloudflare Blocked"
+
+                    # 3. Direct Extraction (No quality filters)
+                    title_el = page.locator(".title").first
+                    if title_el.count() == 0:
+                        browser.close()
+                        return "🗑️ Error: Content Not Found"
+
+                    title = title_el.inner_text().strip()
+                    writer = page.locator(".writer").first.inner_text().strip() if page.locator(".writer").count() > 0 else "Unknown"
+                    
+                    # Tags extraction and translation
+                    ko_tags = [t.inner_text().replace("#", "") for t in page.locator(".tag_item").all()]
+                    en_tags = []
+                    for t in ko_tags:
+                        if t not in self.tag_map:
+                            self.tag_map[t] = self.translator.translate(t)
+                        en_tags.append(self.tag_map[t])
+                    self.save_tag_map()
+
+                    # Mapping Metadata
+                    metadata = {
+                        "title": title,
+                        "writer": writer,
+                        "views": self.clean_numeric(page.locator(".view_count").first.inner_text() if page.locator(".view_count").count() > 0 else "0"),
+                        "chapters": self.clean_numeric(page.locator(".ep_count").first.inner_text() if page.locator(".ep_count").count() > 0 else "0"),
+                        "is_19": 1 if page.locator(".badge-19, .icon-19").count() > 0 else 0,
+                        "is_plus": 1 if page.locator(".badge-plus, .plus_icon").count() > 0 else 0,
+                        "is_completed": 1 if "완결" in content else 0,
+                        "tags_ko": ko_tags,
+                        "tags_en": en_tags,
+                        "url": url
+                    }
+
+                    self.db.save_novel(novel_id, metadata)
+                    
+                    # Randomized delay to prevent rate-limiting
+                    time.sleep(random.uniform(2.5, 5.0))
+                    browser.close()
+                    return "Saved"
+
+                except Exception as e:
+                    browser.close()
+                    return f"❌ System Error: {str(e)[:30]}"
