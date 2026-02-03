@@ -18,6 +18,7 @@ class NovelArchiver:
         self.data = self._load_data()
 
     def _load_data(self):
+        """Loads existing data from the local JSON file."""
         if os.path.exists(self.storage_path):
             with open(self.storage_path, 'r', encoding='utf-8') as f:
                 try:
@@ -28,76 +29,106 @@ class NovelArchiver:
 
     def _clean_number(self, text):
         """
-        Aggressively removes all non-numeric characters.
-        '34차' -> '34'
-        '1,250회' -> '1250'
+        The 'Bulletproof' Cleaner.
+        Removes every single character that isn't a digit (0-9).
+        Converts '34차' -> '34' and '1,200회' -> '1200'
         """
         if not text:
             return 0
-        # This keeps ONLY digits 0-9 and removes everything else (Korean, commas, etc.)
+        # This regex removes anything NOT a digit
         clean_str = re.sub(r'[^\d]', '', text)
         try:
             return int(clean_str) if clean_str else 0
         except ValueError:
             return 0
 
+    def get_headers(self):
+        """Generates fresh headers to bypass simple bot checks."""
+        return {
+            "User-Agent": random.choice(self.user_agents),
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://novelpia.com/",
+            "Connection": "keep-alive"
+        }
+
     def scrape_novel(self, novel_id):
+        """Main scraping logic for a single Novel ID."""
         str_id = str(novel_id)
+        
+        # 1. Smart Cache Check
         if str_id in self.data:
             return "Cached"
 
         url = f"https://novelpia.com/novel/{novel_id}"
+        
         try:
+            # Politeness delay
             time.sleep(random.uniform(1.0, 1.8))
-            headers = {"User-Agent": random.choice(self.user_agents), "Referer": "https://novelpia.com/"}
-            resp = requests.get(url, headers=headers, timeout=10)
             
-            if resp.status_code == 404: return "404"
-            if resp.status_code != 200: return f"Error {resp.status_code}"
-
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            response = requests.get(url, headers=self.get_headers(), timeout=10)
             
-            # --- Robust Extraction ---
-            title_el = soup.find('div', class_='epnew-novel-title')
-            writer_el = soup.find('div', class_='epnew-writer')
-            if not title_el: return "Structure Change"
-
-            # Use the helper for both Chapters and Views
-            chapters = 0
-            views = 0
+            if response.status_code == 404:
+                return "404"
             
-            # Extract Chapters
-            chap_span = soup.find('span', string='회차')
-            if chap_span:
-                raw_chap = chap_span.find_next_sibling('span').get_text(strip=True)
-                chapters = self._clean_number(raw_chap)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # --- Basic Info Extraction ---
+                title_el = soup.find('div', class_='epnew-novel-title')
+                writer_el = soup.find('div', class_='epnew-writer')
+                
+                if not title_el:
+                    return "Parse Error"
+                
+                title = title_el.get_text(strip=True)
+                writer = writer_el.get_text(strip=True) if writer_el else "Unknown"
 
-            # Extract Views
-            view_span = soup.find('span', string='조회')
-            if view_span:
-                raw_view = view_span.find_next_sibling('span').get_text(strip=True)
-                views = self._clean_number(raw_view)
+                # --- Numeric Info Extraction (The '차' Fix) ---
+                chapters = 0
+                views = 0
+                
+                # Novelpia labels are usually in spans
+                labels = soup.find_all('span')
+                for s in labels:
+                    label_text = s.get_text(strip=True)
+                    if label_text == '회차':
+                        val = s.find_next_sibling('span')
+                        if val: chapters = self._clean_number(val.text)
+                    elif label_text == '조회':
+                        val = s.find_next_sibling('span')
+                        if val: views = self._clean_number(val.text)
 
-            metadata = {
-                "id": novel_id,
-                "title": title_el.get_text(strip=True),
-                "writer": writer_el.get_text(strip=True) if writer_el else "Unknown",
-                "chapters": chapters,
-                "views": views,
-                "tags_kr": [t.get_text(strip=True).replace('#', '') for t in soup.find_all('a', class_='tag-item')],
-                "url": url
-            }
+                # --- Tag Extraction ---
+                tags_kr = [t.get_text(strip=True).replace('#', '') 
+                           for t in soup.find_all('a', class_='tag-item')]
 
-            if "카라멜돌체라떼" in metadata['writer'] or is_high_quality(metadata, novel_id):
-                self.data[str_id] = metadata
-                self._save()
-                return "Saved"
-            return "Filtered"
+                metadata = {
+                    "id": novel_id,
+                    "title": title,
+                    "writer": writer,
+                    "chapters": chapters,
+                    "views": views,
+                    "tags_kr": tags_kr,
+                    "is_19": soup.find('span', class_='b_19') is not None,
+                    "is_plus": soup.find('span', class_='b_plus') is not None,
+                    "url": url,
+                    "scraped_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+
+                # 2. Quality Filter Logic
+                # Logic: Always keep the specific author, else check sliding scale
+                if "카라멜돌체라떼" in writer or is_high_quality(metadata, novel_id):
+                    self.data[str_id] = metadata
+                    self._save()
+                    return "Saved"
+                else:
+                    return "Filtered"
 
         except Exception as e:
             return f"Error: {str(e)}"
 
     def _save(self):
+        """Atomic save to the local JSON file."""
         os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
         with open(self.storage_path, 'w', encoding='utf-8') as f:
             json.dump(self.data, f, ensure_ascii=False, indent=4)
