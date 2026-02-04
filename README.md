@@ -30,3 +30,27 @@ We use a **GitHub-style UI** to present data as actionable intelligence:
 
 ## 📈 Why You Should Care
 If you are a reader, this finds your next obsession. If you are an author, this tracks the competition. If you are a data nerd, this is a clean, indexed pipeline for Korean web novel analytics.
+## 🛠️ Tech Stack
+
+The Novelpia Sleeper Scout is built with a focus on high-concurrency performance and a lightweight footprint.
+
+| Layer | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Frontend** | [Streamlit](https://streamlit.io/) | Reactive dashboard with GitHub-style UI components. |
+| **Engine** | [HTTPX](https://www.python-httpx.org/) | Async HTTP client for high-speed, non-blocking scouting. |
+| **Parsing** | [BeautifulSoup4](https://www.crummy.com/software/BeautifulSoup/) | Robust HTML extraction for deeply nested Korean tags. |
+| **Database** | [SQLite3](https://www.sqlite.org/) | Atomic persistent storage with UPSERT logic for stat tracking. |
+| **Language** | [Python 3.10+](https://www.python.org/) | Core logic and data processing. |
+
+---
+
+## 🚀 Quick Start Guide
+
+Follow these steps to launch your first scouting mission and build your encyclopedia.
+
+### 1. Clone & Install
+Ensure you have Python installed, then run:
+```bash
+git clone [https://github.com/yourusername/npia-sleeper-scout.git](https://github.com/yourusername/npia-sleeper-scout.git)
+cd npia-sleeper-scout
+pip install -r requirements.txt
