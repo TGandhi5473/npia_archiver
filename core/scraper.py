@@ -9,13 +9,13 @@ class NovelpiaScraper:
         self.base_url = "https://novelpia.com/novel/"
 
     def _extract_all(self, soup, text):
-        # 1. Meta Logic for Title/Author
+        # FIX: Using attrs={"name": "author"} to avoid the BeautifulSoup 'name' conflict
         t_meta = soup.find("meta", property="og:title")
         title = t_meta["content"].split(" : ")[0].strip() if t_meta else "Unknown"
-        a_meta = soup.find("meta", property="og:author") or soup.find("meta", name="author")
+        
+        a_meta = soup.find("meta", property="og:author") or soup.find("meta", attrs={"name": "author"})
         author = a_meta["content"] if a_meta else "Unknown"
 
-        # 2. Text Logic for Stats
         def get_stat(pat):
             m = re.search(pat, text)
             if not m: return 0
@@ -27,7 +27,6 @@ class NovelpiaScraper:
         ep = get_stat(r'회차\s*[:：]?\s*([\d,]+)')
         views = get_stat(r'조회\s*[:：]?\s*([\d,.]+[만]?)')
         recs = get_stat(r'추천\s*[:：]?\s*([\d,]+)')
-        
         tags = ",".join(list(set(re.findall(r'#([가-힣a-zA-Z0-9]+)', text))))
 
         return {
@@ -38,14 +37,9 @@ class NovelpiaScraper:
         }
 
     def scrape_novel(self, nid, return_raw=False):
-        if not return_raw and self.db.check_exists(nid): return "SKIPPED"
         try:
             with httpx.Client(follow_redirects=True) as client:
                 resp = client.get(f"{self.base_url}{nid}", timeout=10.0)
-                if resp.status_code == 404: 
-                    self.db.add_to_blacklist(nid, "404")
-                    return "404"
-                
                 soup = BeautifulSoup(resp.text, 'lxml')
                 data = self._extract_all(soup, resp.text)
                 data.update({'id': nid, 'url': f"{self.base_url}{nid}", 'date': datetime.now()})
@@ -53,4 +47,4 @@ class NovelpiaScraper:
                 
                 if not return_raw: self.db.save_novel(data)
                 return data
-        except Exception as e: return f"ERR: {e}"
+        except Exception as e: return {"error": str(e)}
