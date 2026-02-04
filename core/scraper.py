@@ -12,12 +12,22 @@ class NovelpiaScraper:
             "Accept-Language": "ko-KR,ko;q=0.9"
         }
 
-    def _extract_number(self, element):
-        """Dives into nested font tags to find the raw number."""
-        if not element: return 0
-        # Finds the deepest text (e.g., '14,991')
-        text = element.get_text(strip=True)
-        nums = re.findall(r'\d+', text.replace(',', ''))
+    def _safe_extract_number(self, soup, icon_alt):
+        """
+        Safely finds the number next to an icon with specific alt text.
+        Prevents 'NoneType' errors by checking if the icon exists first.
+        """
+        icon = soup.find("img", alt=icon_alt)
+        if not icon:
+            return None
+        
+        # Look for the nearest text node containing numbers
+        container = icon.find_next("span")
+        if not container:
+            return None
+            
+        text = container.get_text(strip=True).replace(',', '')
+        nums = re.findall(r'\d+', text)
         return int(nums[0]) if nums else 0
 
     def scrape_novel(self, novel_id):
@@ -27,47 +37,49 @@ class NovelpiaScraper:
         url = f"{self.base_url}{novel_id}"
         try:
             response = httpx.get(url, headers=self.headers, timeout=15.0)
-            if response.status_code != 200: return "ERROR"
+            if response.status_code != 200: return f"HTTP {response.status_code}"
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # 1. GHOST DETECTION (Matching image_fca4e6.png & image_fd2485.png)
-            # Check for the alert modal or the 'deleted novel' message
-            is_deleted = soup.find(id="alert_modal") or "삭제된 소설" in response.text
-            if is_deleted:
-                self.db.add_to_blacklist(novel_id, "MISSING")
+            # 1. GHOST DETECTION (The "Alarm" Word or Modal)
+            # If the alert modal exists or 'deleted' text is found, kill it early.
+            if soup.find(id="alert_modal") or "삭제된 소설" in response.text:
+                self.db.add_to_blacklist(novel_id, "GHOST_ID")
                 return "BLACKLISTED"
 
-            # 2. STATS EXTRACTION (Matching image_fc3f27.png nested font structure)
-            # Preference is in .info-count2; Episodes and Alarms follow similar patterns
-            info_box = soup.select_one(".info-graybox")
-            if not info_box:
-                return "ERROR: Structure Mismatch"
+            # 2. DEFENSIVE STATS EXTRACTION
+            # We use Korean labels from your screenshots: 선호 (Fav), 회차 (Ep), 알람 (Alarm)
+            fav = self._safe_extract_number(soup, "선호")
+            ep = self._safe_extract_number(soup, "회차")
+            al = self._safe_extract_number(soup, "알람")
 
-            # Select based on the icon alt text 'Preference' or specific spans
-            fav = self._extract_number(soup.find("img", alt="Preference").find_next("span", class_="writer-name"))
-            # Note: You can replicate the find logic for 'Episode' and 'Alarm' icons
-            ep = self._extract_number(soup.find(string=re.compile("회차"))) 
-            al = self._extract_number(soup.find(string=re.compile("알람")))
+            # If any core stat is missing, the page structure is wrong (likely a ghost)
+            if fav is None or ep is None:
+                self.db.add_to_blacklist(novel_id, "STRUCTURE_MISMATCH")
+                return "BLACKLISTED"
 
-            # 3. DYNAMIC THRESHOLD (The 350k Pivot)
-            pivot_id = 350000
-            limit = {'f': 25, 'e': 15, 'a': 10} if int(novel_id) > pivot_id else {'f': 150, 'e': 50, 'a': 80}
+            # 3. DYNAMIC PIVOT LOGIC (350k)
+            is_new = int(novel_id) > 350000
+            limit = {'f': 25, 'e': 15, 'a': 10} if is_new else {'f': 150, 'e': 50, 'a': 80}
 
             if fav < limit['f'] or ep < limit['e'] or al < limit['a']:
-                self.db.add_to_blacklist(novel_id, "BELOW_THRESHOLD")
+                self.db.add_to_blacklist(novel_id, "LOW_STATS")
                 return "BLACKLISTED"
 
-            # 4. TAG EXTRACTION (Matching image_fc2849.png)
-            # Dive 2 layers within the span class="tag"
-            tag_spans = soup.select(".writer-tag span.tag")
-            tags = [t.get_text(strip=True).replace("#", "") for t in tag_spans]
+            # 4. FINAL EXTRACTION
+            title_el = soup.select_one(".title")
+            author_el = soup.select_one(".author")
+            
+            if not title_el:
+                self.db.add_to_blacklist(novel_id, "NO_TITLE")
+                return "BLACKLISTED"
 
-            # 5. FINAL SUCCESS DATA
+            tags = [t.get_text(strip=True).replace("#", "") for t in soup.select(".tag_item")]
+            
             data = {
                 'id': novel_id,
-                'title': soup.select_one(".title").get_text(strip=True),
-                'author': soup.select_one(".author").get_text(strip=True) if soup.select_one(".author") else "Unknown",
+                'title': title_el.get_text(strip=True),
+                'author': author_el.get_text(strip=True) if author_el else "Unknown",
                 'fav': fav, 'ep': ep, 'al': al,
                 'ratio': round(fav / ep, 2) if ep > 0 else 0,
                 'tags': ", ".join(tags),
@@ -81,4 +93,5 @@ class NovelpiaScraper:
             return "SUCCESS"
 
         except Exception as e:
-            return f"FAILED: {str(e)[:50]}"
+            # Catch-all to ensure the loop never breaks
+            return f"FAILED: {str(e)[:40]}"
