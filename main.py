@@ -53,7 +53,7 @@ tab_vault, tab_tags, tab_audit, tab_surgical = st.tabs([
     "🔬 Surgical Entry"
 ])
 
-# --- TAB 1: THE VAULT ---
+# --- TAB 1: THE VAULT (WITH STYLING) ---
 with tab_vault:
     conn = db.get_connection()
     df = pd.read_sql("SELECT * FROM valid_novels", conn)
@@ -66,8 +66,18 @@ with tab_vault:
         if f_19:
             df = df[df['is_19'] == 1]
             
+        # --- STYLING LOGIC ---
+        def highlight_18(row):
+            # Applying a soft, transparent red to avoid eye strain
+            if row.is_19 == 1:
+                return ['background-color: rgba(255, 75, 75, 0.15)'] * len(row)
+            return [''] * len(row)
+
+        styled_df = df.sort_values(by="ratio", ascending=False).style.apply(highlight_18, axis=1)
+        # --------------------
+
         st.dataframe(
-            df.sort_values(by="ratio", ascending=False),
+            styled_df,
             column_config={
                 "url": st.column_config.LinkColumn("Access"),
                 "ratio": st.column_config.NumberColumn("Sleeper Ratio", format="%.2f ⭐"),
@@ -89,7 +99,6 @@ with tab_tags:
     tag_counts = db.get_tag_stats()
     
     if tag_counts:
-        # Group data for visualization
         translated_counts = {}
         for tag, count in tag_counts.items():
             en_tag = TAG_MAP.get(tag, f"[!] {tag}")
@@ -102,18 +111,13 @@ with tab_tags:
             top_n = 10
             chart_df = tag_df.head(top_n).copy()
             others_count = tag_df.iloc[top_n:]['Frequency'].sum()
-            
             if others_count > 0:
                 chart_df = pd.concat([chart_df, pd.DataFrame([{'Tag': 'Others', 'Frequency': others_count}])], ignore_index=True)
 
-            fig = px.pie(chart_df, values='Frequency', names='Tag', hole=0.4, 
-                         title=f"Top {top_n} Trope Distribution",
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
+            fig = px.pie(chart_df, values='Frequency', names='Tag', hole=0.4, title="Trope Distribution")
             fig.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig, use_container_width=True)
-            
         with c2:
-            st.write("### Trope Leaderboard")
             st.dataframe(tag_df, use_container_width=True, hide_index=True)
     else:
         st.warning("No data found.")
@@ -122,28 +126,18 @@ with tab_tags:
 with tab_audit:
     st.subheader("🔍 Missing Tag Mappings")
     tag_counts = db.get_tag_stats()
-    
     if tag_counts:
         missing = {tag: count for tag, count in tag_counts.items() if tag not in TAG_MAP}
-        
         if missing:
             m_df = pd.DataFrame(missing.items(), columns=['Korean Tag', 'Occurrences']).sort_values('Occurrences', ascending=False)
-            
-            st.warning(f"Found {len(m_df)} tags currently missing from your TAG_MAP.")
-            
             col_l, col_r = st.columns(2)
             with col_l:
-                st.write("### Frequency List")
                 st.dataframe(m_df, use_container_width=True)
             with col_r:
-                st.write("### Copy-Paste Generator")
-                num_to_gen = st.slider("Tags to generate", 5, 50, 20)
-                snippet = ",\n".join([f'    "{tag}": "??",' for tag in m_df['Korean Tag'].head(num_to_gen)])
+                snippet = ",\n".join([f'    "{tag}": "??",' for tag in m_df['Korean Tag'].head(20)])
                 st.code(snippet, language='python')
         else:
-            st.success("Perfect coverage! All tags in the database are accounted for in mappings.py.")
-    else:
-        st.info("No tags to audit yet.")
+            st.success("All tags translated!")
 
 # --- TAB 4: SURGICAL ENTRY ---
 with tab_surgical:
