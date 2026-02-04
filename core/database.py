@@ -8,13 +8,13 @@ class NovelDB:
         self._init_db()
 
     def get_connection(self):
+        # check_same_thread=False is essential for Streamlit's multi-threaded nature
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         conn.execute("PRAGMA journal_mode=WAL;") 
         return conn
 
     def _init_db(self):
         with self.get_connection() as conn:
-            # Table for valid sleeper hits
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS valid_novels (
                     novel_id INTEGER PRIMARY KEY,
@@ -25,7 +25,6 @@ class NovelDB:
                     url TEXT, last_updated DATETIME
                 )
             """)
-            # Table to avoid re-scraping garbage or 404s
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS blacklist (
                     novel_id INTEGER PRIMARY KEY,
@@ -46,7 +45,6 @@ class NovelDB:
             return cursor.fetchone() is not None
 
     def save_novel(self, data):
-        """Saves or updates novel data. Matches keys in scraper.py."""
         with self.get_connection() as conn:
             conn.execute("""
                 INSERT INTO valid_novels (
@@ -67,27 +65,39 @@ class NovelDB:
                          (novel_id, reason, datetime.now()))
 
     def get_tag_stats(self):
-        """Separate counter for all tags in the vault."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT tags FROM valid_novels WHERE tags != ''")
             all_tags = []
             for row in cursor.fetchall():
-                # Split comma-separated tags into a flat list
                 all_tags.extend([t.strip() for t in row[0].split(',') if t.strip()])
             return Counter(all_tags)
 
     def clear_vault(self):
-        """Wipes vault data safely without breaking transactions."""
         conn = self.get_connection()
         try:
-            conn.isolation_level = None # Autocommit mode for VACUUM
+            conn.isolation_level = None 
             cursor = conn.cursor()
             cursor.execute("DELETE FROM valid_novels")
             cursor.execute("VACUUM")
             return True
         except Exception as e:
             print(f"Database Clear Error: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def clear_blacklist(self):
+        """Wipes the blacklist so you can retry failed or rejected IDs."""
+        conn = self.get_connection()
+        try:
+            conn.isolation_level = None
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM blacklist")
+            cursor.execute("VACUUM")
+            return True
+        except Exception as e:
+            print(f"Blacklist Clear Error: {e}")
             return False
         finally:
             conn.close()
