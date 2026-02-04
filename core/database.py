@@ -8,49 +8,72 @@ class NovelDB:
         self._init_db()
 
     def get_connection(self):
+        # check_same_thread=False is essential for Streamlit's multi-threaded nature
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         conn.execute("PRAGMA journal_mode=WAL;") 
         return conn
 
     def _init_db(self):
         with self.get_connection() as conn:
+            # Added views and recs to the schema
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS valid_novels (
                     novel_id INTEGER PRIMARY KEY,
                     title TEXT, author TEXT,
-                    fav INTEGER, ep INTEGER, views INTEGER, recs INTEGER,
+                    fav INTEGER, ep INTEGER, al INTEGER,
+                    views INTEGER, recs INTEGER,
                     ratio REAL, tags TEXT, 
                     is_19 INTEGER, is_plus INTEGER,
                     url TEXT, last_updated DATETIME
                 )
             """)
-            conn.execute("CREATE TABLE IF NOT EXISTS blacklist (novel_id INTEGER PRIMARY KEY, reason TEXT, scraped_at DATETIME)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS blacklist (
+                    novel_id INTEGER PRIMARY KEY,
+                    reason TEXT, scraped_at DATETIME
+                )
+            """)
+
+    def check_exists(self, novel_id):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM (
+                    SELECT novel_id FROM valid_novels WHERE novel_id = ?
+                    UNION ALL 
+                    SELECT novel_id FROM blacklist WHERE novel_id = ?
+                ) LIMIT 1
+            """, (novel_id, novel_id))
+            return cursor.fetchone() is not None
 
     def save_novel(self, data):
         with self.get_connection() as conn:
+            # Updated to include :views and :recs
             conn.execute("""
                 INSERT INTO valid_novels (
-                    novel_id, title, author, fav, ep, views, recs, 
+                    novel_id, title, author, fav, ep, al, 
+                    views, recs,
                     ratio, tags, is_19, is_plus, url, last_updated
                 ) VALUES (
-                    :id, :title, :author, :fav, :ep, :views, :recs, 
+                    :id, :title, :author, :fav, :ep, :al, 
+                    :views, :recs,
                     :ratio, :tags, :is_19, :is_plus, :url, :date
                 )
                 ON CONFLICT(novel_id) DO UPDATE SET 
-                fav=excluded.fav, ep=excluded.ep, views=excluded.views, 
-                recs=excluded.recs, ratio=excluded.ratio, tags=excluded.tags, 
+                fav=excluded.fav, 
+                ep=excluded.ep, 
+                al=excluded.al,
+                views=excluded.views,
+                recs=excluded.recs,
+                ratio=excluded.ratio, 
+                tags=excluded.tags, 
                 last_updated=excluded.last_updated
             """, data)
 
-    def check_exists(self, nid):
+    def add_to_blacklist(self, novel_id, reason):
         with self.get_connection() as conn:
-            if conn.execute("SELECT 1 FROM valid_novels WHERE novel_id=?", (nid,)).fetchone(): return True
-            if conn.execute("SELECT 1 FROM blacklist WHERE novel_id=?", (nid,)).fetchone(): return True
-            return False
-
-    def add_to_blacklist(self, nid, reason):
-        with self.get_connection() as conn:
-            conn.execute("INSERT OR IGNORE INTO blacklist VALUES (?, ?, ?)", (nid, reason, datetime.now()))
+            conn.execute("INSERT OR IGNORE INTO blacklist VALUES (?, ?, ?)", 
+                         (novel_id, reason, datetime.now()))
 
     def get_tag_stats(self):
         with self.get_connection() as conn:
@@ -60,3 +83,32 @@ class NovelDB:
             for row in cursor.fetchall():
                 all_tags.extend([t.strip() for t in row[0].split(',') if t.strip()])
             return Counter(all_tags)
+
+    def clear_vault(self):
+        conn = self.get_connection()
+        try:
+            conn.isolation_level = None 
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM valid_novels")
+            cursor.execute("VACUUM")
+            return True
+        except Exception as e:
+            print(f"Database Clear Error: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def clear_blacklist(self):
+        """Wipes the blacklist so you can retry failed or rejected IDs."""
+        conn = self.get_connection()
+        try:
+            conn.isolation_level = None
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM blacklist")
+            cursor.execute("VACUUM")
+            return True
+        except Exception as e:
+            print(f"Blacklist Clear Error: {e}")
+            return False
+        finally:
+            conn.close()
