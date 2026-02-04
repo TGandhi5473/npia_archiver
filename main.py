@@ -1,74 +1,74 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 from core.database import NovelDB
 from core.scraper import NovelpiaScraper
+import plotly.express as px
 
-st.set_page_config(page_title="NPIA Sleeper Scout", layout="wide", page_icon="🕵️")
+# --- SETUP ---
+st.set_page_config(page_title="Sleeper Scout 2026", layout="wide")
+db = NovelDB()
+scraper = NovelpiaScraper(db)
 
-# --- INITIALIZATION ---
-if 'db' not in st.session_state: st.session_state.db = NovelDB()
-if 'scraper' not in st.session_state: st.session_state.scraper = NovelpiaScraper(st.session_state.db)
-
-# --- DIALOGS (2nd confirmation gate) ---
-@st.dialog("🔥 CONFIRM FULL PURGE")
-def nuke_vault_dialog():
-    st.warning("All identified Sleeper hits will be permanently erased. Blacklist will remain.")
-    st.write("Do you want to proceed?")
-    col1, col2 = st.columns(2)
-    if col1.button("YES, NUKE IT", type="primary", use_container_width=True):
-        st.session_state.db.clear_vault()
-        st.rerun()
-    if col2.button("NO, GO BACK", use_container_width=True):
-        st.rerun()
-
-# --- SIDEBAR ---
+# --- SIDEBAR: TAG LEADERBOARD ---
 with st.sidebar:
-    st.title("🕵️ Scout Analyst")
-    df_raw = pd.read_sql("SELECT * FROM valid_novels", st.session_state.db.get_connection())
-    st.metric("Vault Capacity", len(df_raw))
-    
-    st.divider()
-    min_ratio = st.slider("Min Ratio Filter", 0.0, 50.0, 10.0)
-    hide_19 = st.checkbox("Hide 18+ Novels", value=False)
-    
-    # --- DANGER ZONE (1st confirmation gate) ---
-    st.divider()
-    with st.popover("🗑️ Clear Vault", use_container_width=True):
-        st.write("First confirmation: Are you sure?")
-        if st.button("Initiate Wipe", type="primary"):
-            nuke_vault_dialog()
+    st.header("🏷️ Global Tag Stats")
+    tag_counts = db.get_tag_stats()
+    if tag_counts:
+        # Create a mini leaderboard
+        tag_df = pd.DataFrame(tag_counts.items(), columns=['Tag', 'Count']).sort_values('Count', ascending=False)
+        st.bar_chart(tag_df.set_index('Tag').head(10)) # Top 10 tags
+        
+        # Tag Filter Dropdown
+        unique_tags = ["All"] + sorted(list(tag_counts.keys()))
+        selected_tag = st.selectbox("Filter by Tag", unique_tags)
+    else:
+        st.info("No tags scouted yet.")
+        selected_tag = "All"
 
-# --- MAIN TABS ---
-tab_scout, tab_vault = st.tabs(["🚀 Mission Control", "📚 Intelligence Vault"])
+# --- MAIN UI ---
+st.title("🚀 Sleeper Scout: Novelpia")
 
-with tab_scout:
-    st.subheader("Targeting Parameters")
-    c1, c2 = st.columns(2)
-    start = c1.number_input("Start ID", value=450000)
-    end = c2.number_input("End ID", value=450100)
-    
-    # Stable scrolling window
-    log_window = st.container(height=350, border=True)
-    
-    if st.button("▶️ START SWEEP", type="primary", use_container_width=True):
-        for nid in range(int(start), int(end) + 1):
-            status = st.session_state.scraper.scrape_novel(nid)
-            log_window.code(f"[{datetime.now().strftime('%H:%M:%S')}] ID {nid}: {status}")
-        st.success("Sweep finished!")
-        st.rerun()
+tab1, tab2 = st.tabs(["Mission Control", "Intelligence Vault"])
 
-with tab_vault:
-    if not df_raw.empty:
-        # Filter logic
-        filtered_df = df_raw[df_raw['ratio'] >= min_ratio]
-        if hide_19:
-            filtered_df = filtered_df[filtered_df['is_19'] == 0]
+with tab1:
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.subheader("Manual Recon")
+        novel_id = st.text_input("Novel ID (e.g., 383628)")
+        if st.button("Scout Target"):
+            with st.spinner("Penetrating Novelpia..."):
+                result = scraper.scrape_novel(novel_id)
+                st.toast(result)
+
+with tab2:
+    st.subheader("📊 Analyzed Intelligence")
+    
+    # Load and Filter Data
+    conn = db.get_connection()
+    df = pd.read_sql("SELECT * FROM valid_novels", conn)
+    
+    if not df.empty:
+        # Apply Tag Filter
+        if selected_tag != "All":
+            df = df[df['tags'].str.contains(selected_tag, na=False)]
             
+        # Styling: Highlight high ratios
+        def highlight_sleepers(val):
+            color = 'background-color: #004d00' if val > 30 else ''
+            return color
+
+        styled_df = df.style.map(highlight_sleepers, subset=['ratio'])
+        
         st.dataframe(
-            filtered_df.sort_values("ratio", ascending=False), 
-            use_container_width=True, 
-            height=600
+            styled_df,
+            column_config={
+                "url": st.column_config.LinkColumn("Link"),
+                "ratio": st.column_config.NumberColumn("Ratio", format="%.2f ⭐"),
+                "is_19": st.column_config.CheckboxColumn("18+"),
+                "is_plus": st.column_config.CheckboxColumn("Plus")
+            },
+            hide_index=True,
+            use_container_width=True
         )
     else:
-        st.info("The Vault is empty. Launch a mission to find some sleepers.")
+        st.warning("The Vault is empty. Start scouting IDs to gather data.")
