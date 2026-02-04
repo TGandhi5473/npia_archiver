@@ -3,107 +3,132 @@ import pandas as pd
 import plotly.express as px
 from core.database import NovelDB
 from core.scraper import NovelpiaScraper
-from core.mappings import TAG_MAP
+from core.mappings import translate_tags, TAG_MAP
 
-# 1. Page Configuration
-st.set_page_config(page_title="NPIA Sleeper Scout", layout="wide", page_icon="🎯")
+# --- SETUP ---
+st.set_page_config(page_title="Sleeper Scout 2026", layout="wide")
 db = NovelDB()
 scraper = NovelpiaScraper(db)
 
-# 2. Sidebar - Recon Controls
+# --- SIDEBAR: MISSION CONTROL ---
 with st.sidebar:
-    st.header("🚀 Recon Mission")
-    st.info("Mode: Hail Mary (Guest)")
+    st.header("🎯 Mission Parameters")
     
-    start_id = st.number_input("Start ID", value=383000, step=1)
-    end_id = st.number_input("End ID", value=383020, step=1)
+    st.subheader("Mass Reconnaissance")
+    col_s, col_e = st.columns(2)
+    start_id = col_s.number_input("Start ID", value=383000)
+    end_id = col_e.number_input("End ID", value=383100)
     
-    if st.button("Launch Mass Recon"):
+    if st.button("🚀 Launch Scout Mission", use_container_width=True):
         progress_bar = st.progress(0)
         status_text = st.empty()
+        total_tasks = int(end_id - start_id + 1)
         
-        id_range = range(int(start_id), int(end_id) + 1)
-        total = len(id_range)
-        
-        for i, nid in enumerate(id_range):
-            status_text.text(f"Scanning ID: {nid}...")
-            # Use the scraper function you provided
+        for i, nid in enumerate(range(int(start_id), int(end_id) + 1)):
+            status_text.text(f"Scanning Target: {nid}...")
             result = scraper.scrape_novel(str(nid))
-            progress_bar.progress((i + 1) / total)
-            
-        status_text.text("✅ Mission Complete!")
-        st.balloons()
-    
+            progress_bar.progress((i + 1) / total_tasks)
+            if "2FA" in result:
+                st.error("Security Wall Detected. Mission Aborted.")
+                break
+        st.success("Recon mission completed.")
+
     st.divider()
-    st.header("⚙️ Database Tools")
-    if st.button("Clear Blacklist"):
-        if db.clear_blacklist():
-            st.success("Blacklist wiped clean!")
     
-    if st.button("🚨 Reset Vault", type="primary"):
-        if db.clear_vault():
-            st.success("Vault is empty. Database clean.")
-
-# 3. Main Interface Tabs
-t1, t2, t3 = st.tabs(["🏛️ The Vault", "📊 Market Analytics", "🔬 Surgical Scout"])
-
-with t1:
-    st.subheader("Intelligence Database")
+    st.subheader("Intelligence Filters")
+    f_plus = st.checkbox("Plus Only", value=False)
+    f_19 = st.checkbox("18+ Only", value=False)
     
-    # Load data from updated database
-    try:
-        df = pd.read_sql("SELECT * FROM valid_novels", db.get_connection())
-    except Exception as e:
-        df = pd.DataFrame()
-        st.error(f"Database sync error: {e}")
+    if st.button("🗑️ Purge Blacklist (Retry Garbage)"):
+        db.clear_blacklist()
+        st.toast("Blacklist wiped.")
 
+# --- MAIN UI TABS ---
+st.title("🛡️ Sleeper Scout Dashboard")
+
+tab_vault, tab_tags, tab_surgical = st.tabs([
+    "📂 Intelligence Vault", 
+    "📊 Global Tag Analytics", 
+    "🔬 Surgical Entry"
+])
+
+# --- TAB 1: THE VAULT ---
+with tab_vault:
+    conn = db.get_connection()
+    df = pd.read_sql("SELECT * FROM valid_novels", conn)
+    
     if not df.empty:
-        # Define display columns to match your new database structure
-        # Order: ID, Title, Ratio (Priority), then the raw numbers
-        cols = ['novel_id', 'title', 'ratio', 'fav', 'ep', 'al', 'views', 'recs', 'tags', 'is_plus', 'is_19']
+        df['tags_en'] = df['tags'].apply(translate_tags)
         
-        # Sort by Ratio as default (Sleeper identification)
-        display_df = df[cols].sort_values("ratio", ascending=False)
-        
+        if f_plus:
+            df = df[df['is_plus'] == 1]
+        if f_19:
+            df = df[df['is_19'] == 1]
+            
         st.dataframe(
-            display_df,
+            df.sort_values(by="ratio", ascending=False),
             column_config={
-                "url": st.column_config.LinkColumn("Link"),
+                "url": st.column_config.LinkColumn("Access"),
                 "ratio": st.column_config.NumberColumn("Sleeper Ratio", format="%.2f ⭐"),
-                "is_plus": st.column_config.CheckboxColumn("Plus?"),
-                "is_19": st.column_config.CheckboxColumn("18+?"),
-                "views": st.column_config.NumberColumn("Total Views", format="%d 👁️"),
+                "is_19": st.column_config.CheckboxColumn("18+"),
+                "is_plus": st.column_config.CheckboxColumn("Plus"),
+                "tags_en": st.column_config.TextColumn("Translated Tags"),
+                "last_updated": st.column_config.DatetimeColumn("Scouted At")
             },
-            hide_index=True,
-            use_container_width=True
+            column_order=("novel_id", "title", "ratio", "fav", "ep", "al", "tags_en", "is_19", "is_plus", "url"),
+            use_container_width=True,
+            hide_index=True
         )
     else:
-        st.warning("The Vault is empty. Gather data using the Recon controls in the sidebar.")
+        st.info("The vault is empty. Start a 'Mass Recon' mission.")
 
-with t2:
-    st.subheader("Trope & Tag Distribution")
-    stats = db.get_tag_stats()
+# --- TAB 2: TAG ANALYTICS ---
+with tab_tags:
+    st.subheader("🏷️ Global Market Saturation")
+    tag_counts = db.get_tag_stats()
     
-    if stats:
-        # Prepare data for Charting
-        tag_data = pd.DataFrame(stats.items(), columns=['Tag', 'Count']).sort_values('Count', ascending=False)
+    if tag_counts:
+        translated_counts = {}
+        for tag, count in tag_counts.items():
+            en_tag = TAG_MAP.get(tag, tag)
+            translated_counts[en_tag] = translated_counts.get(en_tag, 0) + count
+            
+        tag_df = pd.DataFrame(translated_counts.items(), columns=['Tag', 'Frequency']).sort_values('Frequency', ascending=False)
         
-        # Create a Bar Chart of top 20 tags
-        fig = px.bar(tag_data.head(20), x='Count', y='Tag', orientation='h', 
-                     title="Most Common Tags", color='Count', color_continuous_scale='Viridis')
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No analytics available yet. Scan more novels!")
+        c1, c2 = st.columns([3, 2])
+        with c1:
+            # COLLAPSE SMALL TAGS: Everything after top 10 goes into "Others"
+            top_n = 10
+            chart_df = tag_df.head(top_n).copy()
+            others_count = tag_df.iloc[top_n:]['Frequency'].sum()
+            
+            if others_count > 0:
+                others_row = pd.DataFrame([{'Tag': 'Others', 'Frequency': others_count}])
+                chart_df = pd.concat([chart_df, others_row], ignore_index=True)
 
-with t3:
-    st.subheader("Individual ID Analysis")
-    tid = st.text_input("Enter ID (e.g., 351285)", placeholder="351285")
-    if st.button("Run Diagnostic"):
-        with st.spinner("Decoding metadata..."):
-            # This calls the scraper without saving to DB so you can see raw results
-            analysis = scraper.scrape_novel(tid, return_raw=True)
-            if isinstance(analysis, dict):
-                st.success(f"Analysis for: {analysis.get('title')}")
-                st.json(analysis)
-            else:
-                st.error(f"Scraper returned: {analysis}")
+            fig = px.pie(
+                chart_df, 
+                values='Frequency', 
+                names='Tag', 
+                title=f"Market Share: Top {top_n} Tropes",
+                hole=0.4,
+                color_discrete_sequence=px.colors.qualitative.Pastel
+            )
+            # This ensures labels don't overlap for smaller slices
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig, use_container_width=True)
+            
+        with c2:
+            st.write("### Full Trope Leaderboard")
+            st.dataframe(tag_df, use_container_width=True, hide_index=True)
+    else:
+        st.warning("No tags detected yet.")
+
+# --- TAB 3: SURGICAL ENTRY ---
+with tab_surgical:
+    st.subheader("Manual ID Recon")
+    target_id = st.text_input("Target Novel ID")
+    if st.button("Surgical Scout"):
+        with st.spinner(f"Analyzing {target_id}..."):
+            res = scraper.scrape_novel(target_id)
+            st.code(res)
