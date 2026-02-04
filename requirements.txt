@@ -1,12 +1,6 @@
-# --- Core UI & Dashboard ---
-streamlit>=1.53.1
-pandas>=3.0.0
-plotly>=6.0.0
-
-# --- High-Performance Scraper Engine ---
-httpx>=0.28.1
-beautifulsoup4>=4.14.3
-lxml>=6.0.2
-
-# --- Compatibility & Support ---
-asyncio; sys_platform == 'win32'
+streamlit
+pandas
+httpx
+beautifulsoup4
+lxml
+plotly
