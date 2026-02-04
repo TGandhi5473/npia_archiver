@@ -51,6 +51,7 @@ Follow these steps to launch your first scouting mission and build your encyclop
 ### 1. Clone & Install
 Ensure you have Python installed, then run:
 ```bash
-git clone [https://github.com/yourusername/npia-sleeper-scout.git](https://github.com/yourusername/npia-sleeper-scout.git)
-cd npia-sleeper-scout
+git clone https://github.com/TGandhi5473/npia_archiver.git
+cd npia_archiver
 pip install -r requirements.txt
+streamlit run main.py
