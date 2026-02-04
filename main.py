@@ -2,73 +2,67 @@ import streamlit as st
 import pandas as pd
 from core.database import NovelDB
 from core.scraper import NovelpiaScraper
-import plotly.express as px
 
 # --- SETUP ---
 st.set_page_config(page_title="Sleeper Scout 2026", layout="wide")
 db = NovelDB()
 scraper = NovelpiaScraper(db)
 
-# --- SIDEBAR: TAG LEADERBOARD ---
+# --- SIDEBAR FILTERS ---
 with st.sidebar:
-    st.header("🏷️ Global Tag Stats")
-    tag_counts = db.get_tag_stats()
-    if tag_counts:
-        # Create a mini leaderboard
-        tag_df = pd.DataFrame(tag_counts.items(), columns=['Tag', 'Count']).sort_values('Count', ascending=False)
-        st.bar_chart(tag_df.set_index('Tag').head(10)) # Top 10 tags
-        
-        # Tag Filter Dropdown
-        unique_tags = ["All"] + sorted(list(tag_counts.keys()))
-        selected_tag = st.selectbox("Filter by Tag", unique_tags)
-    else:
-        st.info("No tags scouted yet.")
-        selected_tag = "All"
-
-# --- MAIN UI ---
-st.title("🚀 Sleeper Scout: Novelpia")
-
-tab1, tab2 = st.tabs(["Mission Control", "Intelligence Vault"])
-
-with tab1:
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.subheader("Manual Recon")
-        novel_id = st.text_input("Novel ID (e.g., 383628)")
-        if st.button("Scout Target"):
-            with st.spinner("Penetrating Novelpia..."):
-                result = scraper.scrape_novel(novel_id)
-                st.toast(result)
-
-with tab2:
-    st.subheader("📊 Analyzed Intelligence")
+    st.header("🎯 Target Filters")
     
-    # Load and Filter Data
-    conn = db.get_connection()
-    df = pd.read_sql("SELECT * FROM valid_novels", conn)
+    # Range of Novel IDs for Testing
+    st.subheader("Mass Recon")
+    start_id = st.number_input("Start ID", value=383000)
+    end_id = st.number_input("End ID", value=383100)
     
-    if not df.empty:
-        # Apply Tag Filter
-        if selected_tag != "All":
-            df = df[df['tags'].str.contains(selected_tag, na=False)]
-            
-        # Styling: Highlight high ratios
-        def highlight_sleepers(val):
-            color = 'background-color: #004d00' if val > 30 else ''
-            return color
+    if st.button("🚀 Execute Mass Scout"):
+        status_box = st.empty()
+        for nid in range(int(start_id), int(end_id) + 1):
+            status_box.info(f"Scanning Target: {nid}...")
+            res = scraper.scrape_novel(str(nid))
+            if "2FA" in res: # Detection for 2FA trigger
+                st.warning(f"⚠️ 2FA Triggered on {nid}! Check terminal/prompt.")
+                break 
+        st.success("Recon Mission Complete.")
 
-        styled_df = df.style.map(highlight_sleepers, subset=['ratio'])
-        
-        st.dataframe(
-            styled_df,
-            column_config={
-                "url": st.column_config.LinkColumn("Link"),
-                "ratio": st.column_config.NumberColumn("Ratio", format="%.2f ⭐"),
-                "is_19": st.column_config.CheckboxColumn("18+"),
-                "is_plus": st.column_config.CheckboxColumn("Plus")
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-    else:
-        st.warning("The Vault is empty. Start scouting IDs to gather data.")
+    st.divider()
+    
+    # Result Filters (Default: All)
+    st.subheader("Intelligence Filters")
+    f_plus = st.checkbox("Show Only 'Plus' Works", value=False)
+    f_19 = st.checkbox("Show Only '18+' Content", value=False)
+    
+    if st.button("🗑️ Dump Trash (Clear Blacklist)"):
+        db.clear_blacklist() # New method below
+        st.toast("Blacklist Purged.")
+
+# --- MAIN UI: INTELLIGENCE VAULT ---
+st.title("🛡️ Sleeper Scout Vault")
+
+# Fetch Data
+conn = db.get_connection()
+df = pd.read_sql("SELECT * FROM valid_novels", conn)
+
+if not df.empty:
+    # 1. Apply Logic: Filters only apply if checked
+    if f_plus:
+        df = df[df['is_plus'] == 1]
+    if f_19:
+        df = df[df['is_19'] == 1]
+
+    # 2. Display Table
+    st.dataframe(
+        df.sort_values(by="ratio", ascending=False),
+        column_config={
+            "url": st.column_config.LinkColumn("Access"),
+            "ratio": st.column_config.NumberColumn("Sleeper Ratio", format="%.2f ⭐"),
+            "is_19": st.column_config.CheckboxColumn("18+"),
+            "is_plus": st.column_config.CheckboxColumn("Plus")
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+else:
+    st.info("No intelligence gathered. Use the sidebar to scout IDs.")
