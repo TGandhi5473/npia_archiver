@@ -101,4 +101,13 @@ with tab_vault:
         for _, row in df_sleepers.iterrows():
             st.markdown(f"""
                 <div class="gh-card">
-                    <span class="ratio-badge">{row
+                    <span class="ratio-badge">{row['ratio']} Ratio</span>
+                    <a class="gh-title" href="{row['url']}" target="_blank">{row['title']}</a><br>
+                    <small>by <b>{row['author']}</b> • {row['ep']} chapters • {row['fav']} favorites</small>
+                    <div style="margin-top:10px;">
+                        {" ".join([f'<span class="gh-tag">{t.strip()}</span>' for t in str(row['tags']).split(',')[:5]])}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("The Vault is empty. Run a Scout Mission to find hidden gems.")
