@@ -8,7 +8,7 @@ class NovelDB:
         self._init_db()
 
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL;") 
         return conn
 
@@ -24,7 +24,6 @@ class NovelDB:
                     url TEXT, last_updated DATETIME
                 )
             """)
-            conn.execute("CREATE TABLE IF NOT EXISTS blacklist (novel_id INTEGER PRIMARY KEY, reason TEXT, scraped_at DATETIME)")
 
     def save_novel(self, data):
         with self.get_connection() as conn:
@@ -50,16 +49,3 @@ class NovelDB:
             for row in cursor.fetchall():
                 all_tags.extend([t.strip() for t in row[0].split(',') if t.strip()])
             return Counter(all_tags)
-
-    def check_exists(self, nid):
-        with self.get_connection() as conn:
-            return conn.execute("SELECT 1 FROM valid_novels WHERE novel_id=?", (nid,)).fetchone() or \
-                   conn.execute("SELECT 1 FROM blacklist WHERE novel_id=?", (nid,)).fetchone()
-
-    def add_to_blacklist(self, nid, reason):
-        with self.get_connection() as conn:
-            conn.execute("INSERT OR IGNORE INTO blacklist VALUES (?, ?, ?)", (nid, reason, datetime.now()))
-
-    def clear_blacklist(self):
-        conn = self.get_connection(); conn.isolation_level = None
-        conn.execute("DELETE FROM blacklist"); conn.execute("VACUUM"); conn.close()
