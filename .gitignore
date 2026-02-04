@@ -1,21 +1,22 @@
-# Python junk
+# --- Python Specific ---
 __pycache__/
-*.pyc
-
-# Streamlit local settings
-.streamlit/
-
-# Data and Cache
-data/metadata.json
-*.log
-# SQLite Databases
-*.db
-*.sqlite
-*.sqlite3
-# Exclude the actual database file from GitHub
-data/archiver.db
-# Log files
-*.log
-# Environments
+*.py[cod]
+*$py.class
+.venv/
+env/
 venv/
-.env
+
+# --- Database (The Scout's Vault) ---
+# We ignore the actual data files, but keep the code to create them.
+*.db
+*.sqlite3
+*.db-journal
+
+# --- Streamlit Specific ---
+.streamlit/secrets.toml
+.streamlit/static/
+
+# --- OS/IDE Specific ---
+.DS_Store
+.vscode/
+.history/
