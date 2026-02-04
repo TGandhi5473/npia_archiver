@@ -7,9 +7,9 @@ class NovelDB:
         self._init_db()
 
     def get_connection(self):
-        # check_same_thread=False is safe because we use WAL and context managers
+        # We use a 30s timeout and WAL mode to handle concurrent read/writes
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
-        conn.execute("PRAGMA journal_mode=WAL;")  # Allows reading while writing
+        conn.execute("PRAGMA journal_mode=WAL;") 
         return conn
 
     def _init_db(self):
@@ -30,7 +30,6 @@ class NovelDB:
                     reason TEXT, scraped_at DATETIME
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_ratio ON valid_novels(ratio DESC)")
 
     def check_exists(self, novel_id):
         with self.get_connection() as conn:
@@ -49,7 +48,8 @@ class NovelDB:
             conn.execute("""
                 INSERT INTO valid_novels VALUES 
                 (:id, :title, :author, :fav, :ep, :al, :ratio, :tags, :is_19, :is_plus, :url, :date)
-                ON CONFLICT(novel_id) DO UPDATE SET fav=excluded.fav, ratio=excluded.ratio
+                ON CONFLICT(novel_id) DO UPDATE SET 
+                fav=excluded.fav, ep=excluded.ep, ratio=excluded.ratio, last_updated=excluded.last_updated
             """, data)
 
     def add_to_blacklist(self, novel_id, reason):
@@ -58,8 +58,18 @@ class NovelDB:
                          (novel_id, reason, datetime.now()))
 
     def clear_vault(self):
-        """Wipes data but keeps the schema and blacklist intact."""
-        with self.get_connection() as conn:
-            conn.execute("DELETE FROM valid_novels")
-            conn.execute("VACUUM") # Reclaim disk space
-        return True
+        """Wipes data and reclaims space. Fixes the VACUUM transaction error."""
+        conn = self.get_connection()
+        try:
+            # VITAL: Set isolation_level to None for Autocommit mode.
+            # VACUUM cannot run inside a standard BEGIN/COMMIT block.
+            conn.isolation_level = None 
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM valid_novels")
+            cursor.execute("VACUUM")
+            return True
+        except Exception as e:
+            print(f"Clear error: {e}")
+            return False
+        finally:
+            conn.close()
