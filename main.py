@@ -6,7 +6,7 @@ from core.scraper import NovelpiaScraper
 from core.mappings import translate_tags, TAG_MAP
 
 # --- SETUP ---
-st.set_page_config(page_title="Sleeper Scout 2026", layout="wide")
+st.set_page_config(page_title="Sleeper Scout 2026", layout="wide", page_icon="🎯")
 db = NovelDB()
 scraper = NovelpiaScraper(db)
 
@@ -39,16 +39,17 @@ with st.sidebar:
     f_plus = st.checkbox("Plus Only", value=False)
     f_19 = st.checkbox("18+ Only", value=False)
     
-    if st.button("🗑️ Purge Blacklist (Retry Garbage)"):
+    if st.button("🗑️ Purge Blacklist"):
         db.clear_blacklist()
         st.toast("Blacklist wiped.")
 
 # --- MAIN UI TABS ---
 st.title("🛡️ Sleeper Scout Dashboard")
 
-tab_vault, tab_tags, tab_surgical = st.tabs([
+tab_vault, tab_tags, tab_audit, tab_surgical = st.tabs([
     "📂 Intelligence Vault", 
-    "📊 Global Tag Analytics", 
+    "📊 Market Share", 
+    "📥 Translation Audit",
     "🔬 Surgical Entry"
 ])
 
@@ -80,51 +81,71 @@ with tab_vault:
             hide_index=True
         )
     else:
-        st.info("The vault is empty. Start a 'Mass Recon' mission.")
+        st.info("The vault is empty.")
 
-# --- TAB 2: TAG ANALYTICS ---
+# --- TAB 2: MARKET SHARE ---
 with tab_tags:
     st.subheader("🏷️ Global Market Saturation")
     tag_counts = db.get_tag_stats()
     
     if tag_counts:
+        # Group data for visualization
         translated_counts = {}
         for tag, count in tag_counts.items():
-            en_tag = TAG_MAP.get(tag, tag)
+            en_tag = TAG_MAP.get(tag, f"[!] {tag}")
             translated_counts[en_tag] = translated_counts.get(en_tag, 0) + count
             
         tag_df = pd.DataFrame(translated_counts.items(), columns=['Tag', 'Frequency']).sort_values('Frequency', ascending=False)
         
         c1, c2 = st.columns([3, 2])
         with c1:
-            # COLLAPSE SMALL TAGS: Everything after top 10 goes into "Others"
             top_n = 10
             chart_df = tag_df.head(top_n).copy()
             others_count = tag_df.iloc[top_n:]['Frequency'].sum()
             
             if others_count > 0:
-                others_row = pd.DataFrame([{'Tag': 'Others', 'Frequency': others_count}])
-                chart_df = pd.concat([chart_df, others_row], ignore_index=True)
+                chart_df = pd.concat([chart_df, pd.DataFrame([{'Tag': 'Others', 'Frequency': others_count}])], ignore_index=True)
 
-            fig = px.pie(
-                chart_df, 
-                values='Frequency', 
-                names='Tag', 
-                title=f"Market Share: Top {top_n} Tropes",
-                hole=0.4,
-                color_discrete_sequence=px.colors.qualitative.Pastel
-            )
-            # This ensures labels don't overlap for smaller slices
+            fig = px.pie(chart_df, values='Frequency', names='Tag', hole=0.4, 
+                         title=f"Top {top_n} Trope Distribution",
+                         color_discrete_sequence=px.colors.qualitative.Pastel)
             fig.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig, use_container_width=True)
             
         with c2:
-            st.write("### Full Trope Leaderboard")
+            st.write("### Trope Leaderboard")
             st.dataframe(tag_df, use_container_width=True, hide_index=True)
     else:
-        st.warning("No tags detected yet.")
+        st.warning("No data found.")
 
-# --- TAB 3: SURGICAL ENTRY ---
+# --- TAB 3: TRANSLATION AUDIT ---
+with tab_audit:
+    st.subheader("🔍 Missing Tag Mappings")
+    tag_counts = db.get_tag_stats()
+    
+    if tag_counts:
+        missing = {tag: count for tag, count in tag_counts.items() if tag not in TAG_MAP}
+        
+        if missing:
+            m_df = pd.DataFrame(missing.items(), columns=['Korean Tag', 'Occurrences']).sort_values('Occurrences', ascending=False)
+            
+            st.warning(f"Found {len(m_df)} tags currently missing from your TAG_MAP.")
+            
+            col_l, col_r = st.columns(2)
+            with col_l:
+                st.write("### Frequency List")
+                st.dataframe(m_df, use_container_width=True)
+            with col_r:
+                st.write("### Copy-Paste Generator")
+                num_to_gen = st.slider("Tags to generate", 5, 50, 20)
+                snippet = ",\n".join([f'    "{tag}": "??",' for tag in m_df['Korean Tag'].head(num_to_gen)])
+                st.code(snippet, language='python')
+        else:
+            st.success("Perfect coverage! All tags in the database are accounted for in mappings.py.")
+    else:
+        st.info("No tags to audit yet.")
+
+# --- TAB 4: SURGICAL ENTRY ---
 with tab_surgical:
     st.subheader("Manual ID Recon")
     target_id = st.text_input("Target Novel ID")
