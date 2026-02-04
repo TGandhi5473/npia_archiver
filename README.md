@@ -8,7 +8,8 @@ Standard web novel rankings are biased toward longevity. A novel with 1,000 chap
 This isn't a scraper; it's a **Signal Filter**. 
 - **Automated Intelligence:** It identifies "Ghost IDs" and deletes them from your sight.
 - **Dynamic Quality Control:** It holds older novels to a higher standard (Legacy IDs) while giving newer works a chance to prove their potential (Rising IDs).
-- **Efficiency over Volume:** It calculates the **Sleeper Ratio** (Favorites per Episode) to highlight the most "dense" high-quality content on the platform.
+- **18+ Content Enforcement:** Uses an adult-trope signature engine (NTL, NTR, Hypnosis, etc.) to force-classify 19+ content even if metadata is hidden.
+- **Sleeper Ratio:** Calculates Favorites per Episode to highlight the most "dense" high-quality content on the platform.
 
 ---
 
@@ -17,41 +18,38 @@ This isn't a scraper; it's a **Signal Filter**.
 | :--- | :--- | :--- |
 | **Pre-Check** | SQLite Union Search | Skips redundant work; 0ms latency for known IDs. |
 | **Sanity Check** | "Alarm" Keyword | Detects custom 404/Removed pages without a browser. |
-| **Pivot Logic** | 350,000 ID Mark | Segregates "Legacy" (Harder bar) vs "Rising" (Lighter bar). |
-| **The Filter** | Favs > X, Eps > Y | Purges "trash" before it ever hits your database. |
-
-## 📊 The "Encyclopedia" Dashboard
-We use a **GitHub-style UI** to present data as actionable intelligence:
-- **Topic Analytics:** A 20-tag "Language Bar" showing the top genres in the sleeper market.
-- **Repo Cards:** Each novel is rendered as a repository card, with the **Sleeper Ratio** as the star count.
-- **Persistent Caching:** Powered by `st.cache_resource`, ensuring the UI stays snappy even as the "Encyclopedia" grows.
+| **NSFW Override** | `ADULT_RED_FLAGS` | Classifies 19+ content based on trope tags (e.g., #NTL, #조교). |
+| **The Filter** | Favs > 10, Eps > 1 | Purges "trash" before it ever hits your database. |
 
 ---
 
-## 📈 Why You Should Care
-If you are a reader, this finds your next obsession. If you are an author, this tracks the competition. If you are a data nerd, this is a clean, indexed pipeline for Korean web novel analytics.
-## 🛠️ Tech Stack
+## 📊 The "Encyclopedia" Dashboard
+We use a **High-Density UI** to present data as actionable intelligence:
+- **📂 Intelligence Vault:** Persistent storage with **Soft-Red Highlighting** for 18+ entries to improve visual scanning.
+- **📊 Market Share:** A donut-style trope analysis bar showing the top genres in the sleeper market.
+- **📥 Translation Audit:** A dedicated tab to manage "Translation Debt" by finding and mapping new Korean tags.
+- **Persistent Caching:** Powered by SQLite WAL mode, ensuring the UI stays snappy even as the "Encyclopedia" grows.
 
-The Novelpia Sleeper Scout is built with a focus on high-concurrency performance and a lightweight footprint.
+---
+
+## 🛠️ Tech Stack
 
 | Layer | Technology | Purpose |
 | :--- | :--- | :--- |
-| **Frontend** | [Streamlit](https://streamlit.io/) | Reactive dashboard with GitHub-style UI components. |
-| **Engine** | [HTTPX](https://www.python-httpx.org/) | Async HTTP client for high-speed, non-blocking scouting. |
+| **Frontend** | [Streamlit](https://streamlit.io/) | Reactive dashboard with custom row-styling logic. |
+| **Engine** | [HTTPX](https://www.python-httpx.org/) | Sync/Async HTTP client for high-speed, non-blocking scouting. |
 | **Parsing** | [BeautifulSoup4](https://www.crummy.com/software/BeautifulSoup/) | Robust HTML extraction for deeply nested Korean tags. |
 | **Database** | [SQLite3](https://www.sqlite.org/) | Atomic persistent storage with UPSERT logic for stat tracking. |
-| **Language** | [Python 3.10+](https://www.python.org/) | Core logic and data processing. |
+| **Visualization**| [Plotly](https://plotly.com/) | Interactive Donut Charts for trope distribution. |
 
 ---
 
 ## 🚀 Quick Start Guide
 
-Follow these steps to launch your first scouting mission and build your encyclopedia.
-
 ### 1. Clone & Install
 Ensure you have Python installed, then run:
 ```bash
-git clone https://github.com/TGandhi5473/npia_archiver.git
+git clone [https://github.com/TGandhi5473/npia_archiver.git](https://github.com/TGandhi5473/npia_archiver.git)
 cd npia_archiver
 pip install -r requirements.txt
 streamlit run main.py
