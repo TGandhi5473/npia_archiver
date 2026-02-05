@@ -116,6 +116,26 @@ TAG_MAP = {
     "촉수": "Tentacles",
     "근친": "Incest",
     "마사지": "Massage",
+    "중세": "Medieval",
+    "다중": "Multiple/Multi-POV",
+    "유희생활": "Playful Life / Living for Fun",
+    "사이다": "Refreshing (OP/Fast-paced)", # Literally 'Cider', refers to satisfying plot progression
+    "다크판타지": "Dark Fantasy",
+    "갤러리": "Gallery / Forum", # Usually refers to community-based tropes (like DCInside)
+    "괴이": "Anomaly / Apparition",
+    "가면라이더": "Kamen Rider",
+    "괴담": "Ghost Story / Urban Legend",
+    "액션": "Action",
+    "2차창작": "Fanfiction / Secondary Creation",
+    "이세계": "Isekai / Other World",
+    "빌런": "Villain",
+    "감금": "Confinement",
+    "생존": "Survival",
+    "재벌": "Chaebol / Tycoon",
+    "던전": "Dungeon",
+    "체인소맨": "Chainsaw Man",
+    "힐링": "Healing",
+    "히어로": "Hero"
 }
 
 def translate_tags(tag_string):
