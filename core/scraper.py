@@ -10,9 +10,22 @@ class NovelpiaScraper:
         
         # Dead giveaway tags for 18+ classification based on your focus
         self.ADULT_RED_FLAGS = [
-            "ntl", "ntr", "고수위", "조교", "능욕", "최면", 
-            "관음", "역강간", "촉수", "근친", "절륜", "성인"
-        ]
+    # --- Original Base Tags ---
+    "ntl", "ntr", "고수위", "조교", "능욕", "최면", 
+    "관음", "역강간", "촉수", "근친", "절륜", "성인",
+
+    # --- Hardcore & Fetish (Dead Giveaways) ---
+    "하드코어", "애널", "피스팅", "착정", "방뇨", "펠라치오",
+    "파이즈리", "상식개변", "임신", "모유", "암컷타락", "자위",
+    
+    # --- Power Dynamics & Dark Themes ---
+    "노예", "세뇌", "강간", "윤간", "조교물", "MC물",
+    "성접대", "강제암컷타락", "최면물", "조교", "노예시장",
+
+    # --- System/Setting Specific ---
+    "성인용", "R18", "야설", "에로", "떡협지", "섹스",
+    "오나홀", "딜도", "BDSM", "SM", "복종", "굴복"
+]
         
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0",
