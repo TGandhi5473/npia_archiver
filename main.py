@@ -4,14 +4,13 @@ import plotly.express as px
 from core.database import NovelDB
 from core.scraper import NovelpiaScraper
 from core.mappings import translate_tags, TAG_MAP
-from deep_translator import GoogleTranslator
 
 # --- SETUP ---
 st.set_page_config(page_title="Sleeper Scout 2026", layout="wide", page_icon="🎯")
 db = NovelDB()
 scraper = NovelpiaScraper(db)
 
-# --- SIDEBAR ---
+# --- SIDEBAR: SCOUTING COMMAND ---
 with st.sidebar:
     st.header("🎯 Mission Parameters")
     col_s, col_e = st.columns(2)
@@ -27,18 +26,20 @@ with st.sidebar:
         st.success("Mission completed.")
 
     st.divider()
+    st.subheader("Global Filters")
     f_plus = st.checkbox("Plus Only", value=False)
-    f_19 = st.checkbox("18+ Only", value=False)
+    f_19 = st.checkbox("18+ Only (NSFW)", value=False)
+    
     if st.button("🗑️ Purge Blacklist"):
         db.clear_blacklist()
         st.toast("Blacklist wiped.")
 
 # --- TABS ---
-tab_vault, tab_tags, tab_audit, tab_surgical = st.tabs([
-    "📂 Intelligence Vault", "📊 Market Share", "📥 Translation Audit", "🔬 Surgical Entry"
+tab_vault, tab_market, tab_associations, tab_audit = st.tabs([
+    "📂 Intelligence Vault", "📊 Market Share", "🔗 Trope Associations", "🔍 Translation Audit"
 ])
 
-# --- TAB 1: VAULT ---
+# --- TAB 1: INTELLIGENCE VAULT ---
 with tab_vault:
     df = pd.read_sql("SELECT * FROM valid_novels", db.get_connection())
     if not df.empty:
@@ -51,63 +52,75 @@ with tab_vault:
 
         st.dataframe(
             df.sort_values(by="ratio", ascending=False).style.apply(highlight_18, axis=1),
-            column_config={"url": st.column_config.LinkColumn("Access"), "ratio": st.column_config.NumberColumn("Ratio", format="%.2f ⭐")},
+            column_config={
+                "url": st.column_config.LinkColumn("Access"), 
+                "ratio": st.column_config.NumberColumn("Ratio", format="%.2f ⭐")
+            },
             column_order=("novel_id", "title", "ratio", "fav", "ep", "tags_en", "is_19", "is_plus", "url"),
             use_container_width=True, hide_index=True
         )
 
-# --- TAB 2: MARKET SHARE ---
-with tab_tags:
+# --- TAB 2: MARKET SHARE (OVERALL) ---
+with tab_market:
     tag_counts = db.get_tag_stats()
     if tag_counts:
-        translated = {TAG_MAP.get(k, f"[!] {k}"): v for k, v in tag_counts.items()}
-        tag_df = pd.DataFrame(translated.items(), columns=['Tag', 'Freq']).sort_values('Freq', ascending=False)
+        # Translate keys using TAG_MAP
+        translated = {TAG_MAP.get(k, f"[Unmapped] {k}"): v for k, v in tag_counts.items()}
+        tag_df = pd.DataFrame(translated.items(), columns=['Tag', 'Frequency']).sort_values('Frequency', ascending=False)
+        
         c1, c2 = st.columns([3, 2])
         with c1:
-            fig = px.pie(tag_df.head(10), values='Freq', names='Tag', hole=0.4, title="Top 10 Tropes")
+            fig = px.pie(tag_df.head(15), values='Frequency', names='Tag', hole=0.4, 
+                         title="Top 15 Market Tropes (Global)")
             fig.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig, use_container_width=True)
         with c2:
+            st.subheader("Raw Distribution")
             st.dataframe(tag_df, use_container_width=True, hide_index=True)
 
-# --- TAB 3: TRANSLATION AUDIT (AUTOMATED) ---
-with tab_audit:
-    st.subheader("🔍 Automatic Trope Mapping")
-    tag_counts = db.get_tag_stats()
+# --- TAB 3: TROPE ASSOCIATIONS (NEW PIE CHARTS) ---
+with tab_associations:
+    st.header("🔗 Major Genre Deep-Dive")
+    st.write("Understand the 'Sub-tags' most commonly found within major genres.")
     
-    if tag_counts:
-        missing_tags = [k for k in tag_counts.keys() if k not in TAG_MAP]
+    # Define English keys for the user to pick from
+    major_genres_en = ["Fantasy", "Harem", "Romance", "Modern Fantasy", "Martial Arts", "Academy", "Streaming", "Gender Bender"]
+    # Reverse mapping to find Korean tags in the DB
+    EN_TO_KO = {v: k for k, v in TAG_MAP.items()}
+    
+    selected_genre_en = st.selectbox("Select Genre to Analyze", major_genres_en)
+    selected_genre_ko = EN_TO_KO.get(selected_genre_en)
+    
+    if selected_genre_ko:
+        # Logic: Find novels that have the selected genre and count their OTHER tags
+        # We query the DB for any novel containing the Korean anchor tag
+        query = f"SELECT tags FROM valid_novels WHERE tags LIKE '%{selected_genre_ko}%'"
+        novels_with_tag = pd.read_sql(query, db.get_connection())
         
-        if missing_tags:
-            st.warning(f"Detected {len(missing_tags)} tags missing English translations.")
+        if not novels_with_tag.empty:
+            all_associated_tags = []
+            for tag_str in novels_with_tag['tags']:
+                tags = [t.strip() for t in tag_str.split(',') if t.strip() != selected_genre_ko]
+                all_associated_tags.extend(tags)
             
-            if st.button("🪄 Magic Translate (Auto-suggest English)"):
-                with st.spinner("Translating tropes..."):
-                    translator = GoogleTranslator(source='ko', target='en')
-                    # Batch processing to prevent timeout
-                    suggestions = {}
-                    for tag in missing_tags:
-                        try:
-                            # Handle common slang/tropes manually if needed, otherwise use Google
-                            suggestions[tag] = translator.translate(tag)
-                        except:
-                            suggestions[tag] = "Translation Error"
-                    
-                    # Create the code block for mappings.py
-                    code_lines = [f'    "{k}": "{v}",' for k, v in suggestions.items()]
-                    st.success("Translations generated! Copy the block below into your TAG_MAP:")
-                    st.code("\n".join(code_lines), language='python')
+            assoc_counts = pd.Series(all_associated_tags).value_counts().head(10)
+            assoc_df = pd.DataFrame({'Tag_KO': assoc_counts.index, 'Count': assoc_counts.values})
+            assoc_df['Tag_EN'] = assoc_df['Tag_KO'].apply(lambda x: TAG_MAP.get(x, x))
             
-            # Simple list view
-            m_df = pd.DataFrame([{"Korean": k, "Count": tag_counts[k]} for k in missing_tags]).sort_values("Count", ascending=False)
-            st.dataframe(m_df, use_container_width=True)
+            fig_assoc = px.pie(assoc_df, values='Count', names='Tag_EN', hole=0.5,
+                               title=f"Sub-Tropes often found with {selected_genre_en}")
+            st.plotly_chart(fig_assoc, use_container_width=True)
         else:
-            st.success("All tags are currently translated in mappings.py!")
-    else:
-        st.info("No data available to audit.")
+            st.info(f"Not enough data in the vault for {selected_genre_en} yet.")
 
-# --- TAB 4: SURGICAL ENTRY ---
-with tab_surgical:
-    target_id = st.text_input("Target Novel ID")
-    if st.button("Surgical Scout"):
-        st.code(scraper.scrape_novel(target_id))
+# --- TAB 4: TRANSLATION AUDIT ---
+with tab_audit:
+    st.subheader("🔍 Missing Mappings")
+    tag_counts = db.get_tag_stats()
+    if tag_counts:
+        missing = [{"Korean": k, "Frequency": v} for k, v in tag_counts.items() if k not in TAG_MAP]
+        if missing:
+            st.warning(f"Found {len(missing)} unmapped Korean tags.")
+            st.dataframe(pd.DataFrame(missing).sort_values("Frequency", ascending=False), use_container_width=True)
+        else:
+            st.success("Translation Dictionary is 100% complete!")
